@@ -7,11 +7,18 @@ import { GoogleGenAI, Type } from "@google/genai";
  * Uses gemini-3-flash-preview for efficient summarization and extraction.
  */
 export const getLinkMetadata = async (url: string) => {
+  const apiKey = process.env.API_KEY;
+
+  // If no API key is provided, skip AI and go to fallback immediately
+  if (!apiKey || apiKey === "undefined" || apiKey.length < 5) {
+    console.warn("Gemini API Key is missing. Falling back to basic metadata extraction.");
+    return generateFallbackMetadata(url);
+  }
+
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({ apiKey: apiKey });
     
     // Query gemini-3-flash-preview to guess/extract site metadata based on the URL
-    // Since browser CORS limits direct fetching, we rely on the model's knowledge
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: `Analyze this URL: ${url}. Provide a professional title, a brief description, and a 1-sentence summary of what this website likely contains.`,
@@ -39,37 +46,43 @@ export const getLinkMetadata = async (url: string) => {
     };
   } catch (error) {
     console.error("Gemini metadata extraction failed:", error);
-    // Fallback logic for when AI or network fails
-    try {
-      const urlObj = new URL(url);
-      const domain = urlObj.hostname.replace('www.', '');
-      let title = domain;
-      const pathParts = urlObj.pathname.split('/').filter(p => p.length > 0);
-      
-      if (pathParts.length > 0) {
-        const lastPart = pathParts[pathParts.length - 1]
-          .replace(/-/g, ' ')
-          .replace(/_/g, ' ')
-          .split('.')[0];
-        
-        if (lastPart.length > 2) {
-          title = lastPart.charAt(0).toUpperCase() + lastPart.slice(1);
-        }
-      } else {
-        title = domain.charAt(0).toUpperCase() + domain.slice(1);
-      }
+    return generateFallbackMetadata(url);
+  }
+};
 
-      return {
-        title: title,
-        description: `Source: ${domain}`,
-        summary: "Metadata generated without AI."
-      };
-    } catch (e) {
-      return {
-        title: "Unknown Website",
-        description: url,
-        summary: "Could not parse metadata."
-      };
+/**
+ * Basic URL parsing logic when AI is unavailable or fails.
+ */
+const generateFallbackMetadata = (url: string) => {
+  try {
+    const urlObj = new URL(url);
+    const domain = urlObj.hostname.replace('www.', '');
+    let title = domain;
+    const pathParts = urlObj.pathname.split('/').filter(p => p.length > 0);
+    
+    if (pathParts.length > 0) {
+      const lastPart = pathParts[pathParts.length - 1]
+        .replace(/-/g, ' ')
+        .replace(/_/g, ' ')
+        .split('.')[0];
+      
+      if (lastPart.length > 2) {
+        title = lastPart.charAt(0).toUpperCase() + lastPart.slice(1);
+      }
+    } else {
+      title = domain.charAt(0).toUpperCase() + domain.slice(1);
     }
+
+    return {
+      title: title,
+      description: `Source: ${domain}`,
+      summary: "Basic metadata (AI service currently unavailable)."
+    };
+  } catch (e) {
+    return {
+      title: "Unknown Website",
+      description: url,
+      summary: "Could not parse metadata."
+    };
   }
 };
